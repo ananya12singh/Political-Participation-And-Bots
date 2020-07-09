@@ -1,0 +1,103 @@
+---
+title: "Data Mining Final Project Notebook"
+output:
+  word_document: default
+  pdf_document: default
+  html_notebook: default
+---
+
+Project: Analyzing tweets to ascertain bots by running a sentiment analysis 
+
+Overview
+I wanted to run a sentiment analysis to see the tweets associated with bots. For that, I scraped data off twitter for a specific hashtag which is related to a recent event in India. In India. Recently a Citizenship Amendment Bill was passed that and I wanted to see what sort of sentiments are attached to the tweets with that hashtag and see what sort of sentiments are coming from a tweet by a bot. For ascertainign if a user is a bot, I used the 'botornot' package which I got from GitHub. 
+
+```{r}
+library(rtweet)
+library(ggplot2)
+library(dplyr)
+library(tidytext)
+library(twitteR)
+library(syuzhet)
+library(sentimentr)
+library(tweetbotornot)
+```
+
+```{r}
+
+key <- 'EgPhvXudWD5KGiyogZJS3IRTU'
+secret <- 'FUBNG3opzyKfOH2mwVsOVNgxWXz0dfXqEzoaVYH3KCutJbQeBv'
+access_token <- '932945760-VGg2BuVYVqkZo9msUCnnbmhxMrRxo3tSCLEM3NDT'
+access_secret <- 'sfGmBZMBC8ri0voErVul2GnwIHuDTm3d605NZl8ldRK0v'
+```
+
+```{r}
+setup_twitter_oauth(key, secret, access_token, access_secret)
+```
+
+Scraping tweets with the hashtag #CAA off twitter. Recent changes in Twitter policy allows tweets to be scraped only from the last week. 
+
+```{r}
+
+cab<- searchTwitter("#CAAProtests", n=100, lang="en")
+df1 <- do.call("rbind", lapply(cab, as.data.frame))
+write.csv(df1, "data/tweets.csv", row.names = FALSE)
+```
+
+```{r}
+#Converting it to a dataframe 
+cab <- twListToDF(cab)
+screen_names <- as.vector(cab$screenName)
+user_info <- lookupUsers(screen_names)
+df2 <- do.call("rbind", lapply(user_info, as.data.frame))
+write.csv(df2, file="data/user_info.csv")
+```
+
+## Now manually adding screenName column
+
+```{r}
+#Merging dataframes 
+df2 <- read.csv(file = "data/user_info.csv")
+df <- merge(df1, df2 , by="screenName")
+df <- df %>% select(screenName, description, followersCount, text)
+sentiment <- sentiment_by(df$text)
+
+df$ave_sentiment=sentiment$ave_sentiment
+df$sd_sentiment=sentiment$sd
+
+write.csv(df, file="data/dataset.csv")
+```
+
+I used the botornot package to fix probabilities for each user to be a bot. The package uses a gradient boosted model with user-level and tweets level data such as bio, location, number of followers and friends, number of hashtags, mentions, capital letter etc). 
+Source: https://overflow.buffer.com/2018/03/07/bot-not-identifying-twitter-bots-machine-learning/ 
+
+```{r, error=TRUE}
+#Getting the probability of a yser being a bot 
+install.packages("tweetbotornot")
+if (!requireNamespace("remotes", quietly = TRUE)) {
+  install.packages("remotes")
+}
+devtools::install_github("mkearney/tweetbotornot")
+library(tweetbotornot)
+df <- read.csv(file = "data/dataset.csv")
+users <- df$screenName
+data <- tweetbotornot(users, fast=TRUE)
+data[order(data$prob_bot), ]
+colnames(data) <- c("screenName", "userID", "prob_bot")
+df3 <- merge(df, data, by="screenName")
+write.csv(df3, file="data/dataset_with_bot_prob.csv")
+```
+
+
+Plotting the sentiment score vis-a-vis the probability of being a bot.
+
+```{r, error=TRUE}
+plot(df3$ave_sentiment, df3$prob_bot, main="Probability of user being a bot v/s sentiment score of tweet", ylab="Probability", xlab = "Sentiment Score")
+```
+
+Conclusion:
+My initial hypothesis was that for this hashtag #CAA, I assume that bots would be demonstrating a negative sentiment. My hypothesis is based on the fact that the current government in India has a twitter handle that uses many bots for its retweets and tweets.  Seeing the trend, most extreme sentiment tweets are mostly coming form bots. 
+
+
+
+
+
